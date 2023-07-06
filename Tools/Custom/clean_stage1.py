@@ -173,7 +173,7 @@ def clean_payload(file_name):
     with open('Stage1_offset.bin', 'wb') as f:
         f.write(cleaned)
     
-    shellcode_attribs = {'verbose': True, 'input': 'Stage1_offset.bin', 'architecture': '32', 'output': 'Stage1.exe', 'string': '', 'keep': False}
+    shellcode_attribs = {'verbose': True, 'input': 'Stage1_offset.bin', 'architecture': '32', 'output': 'CustomPE.exe', 'string': '', 'keep': False}
     
     CheckRequirementsMet(shellcode_attribs)
 
