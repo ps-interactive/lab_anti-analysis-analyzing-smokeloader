@@ -7,6 +7,7 @@ from ctypes import Structure, byref, sizeof, WinError
 from colorama import Fore as c
 from colorama import just_fix_windows_console
 from platform import system
+from hexdump import hexdump
 
 if system() == 'Windows':
     just_fix_windows_console()
@@ -152,12 +153,6 @@ VirtualProtectEx = windll.kernel32.VirtualProtectEx
 VirtualProtectEx.restype = DWORD
 VirtualProtectEx.argtypes = (HANDLE, LPVOID, SIZE_T, DWORD, PDWORD)
 
-# Custom MemoryManager
-class MemoryMap:
-    def __init__(self, process_id) -> None:
-        self.proc_id = process_id
-        self.memory = b''
-
 # Win32 API implementations
 def VirtualQueryEx(hProcess, lpAddress, process_is32):
     if process_is32:
@@ -168,23 +163,6 @@ def VirtualQueryEx(hProcess, lpAddress, process_is32):
     success = windll.kernel32.VirtualQueryEx(hProcess, LPVOID(lpAddress), byref(lpBuffer), sizeof(lpBuffer))
     assert success,  "VirtualQueryEx Failed.\n%s" % (WinError(GetLastError())[1])
     return MEMORY_BASIC_INFORMATION(lpBuffer)
-
-def get_imagefile(hProcess):
-    """
-    Convert PID to ImageFile
-    """
-    image_name = ctypes.create_string_buffer(512)
-    image_len = 0
-
-    image_len = GetProcessImageFileNameA(hProcess, image_name, sizeof(image_name))
-
-    if image_len > 0:
-        image = image_name[:image_len].decode()
-        index = image.find("HarddiskVolume") + len("HarddiskVolumne") + 1
-        return "c:\\" + image[index:]
-    
-    return None
-    
 
 def GetMappedFileNameA(hProcess, lpAddress):
     file_name = ctypes.create_string_buffer(512)
@@ -198,99 +176,116 @@ def GetMappedFileNameA(hProcess, lpAddress):
         return "c:\\" + image_file[index:]
         
 
-# Functions for handling memory operations
-def get_process_handle(dwProcessId, dwDesiredAccess, bInheritHandle=False):
-    handle = OpenProcess(dwDesiredAccess, bInheritHandle, dwProcessId)
-    if handle is None or handle == 0:
-        raise Exception(c.RED + f"Error: {GetLastError()}" + c.RESET)
+# Custom MemoryManager
+class MemoryMap:
+    def __init__(self, process_id) -> None:
+        self.proc_id = process_id
+        self.memory = b''
+        self.extracted_image = b''
     
-    return handle
-
-def read_buffer(hProcess, lpBaseAddress, nSize):
-    dwNumberOfBytesRead = ReadProcessMemory.argtypes[-1]()
-    lpBuffer = ctypes.create_string_buffer(nSize)
-    try:
-        result = ReadProcessMemory(hProcess, LPVOID(lpBaseAddress), lpBuffer, nSize, ctypes.addressof(dwNumberOfBytesRead))
-        if result is None or result == 0:
-            raise Exception('Error: %s' % GetLastError())
-
-        if dwNumberOfBytesRead.value != nSize:
-            raise Exception('Read %s bytes when %s bytes should have been read' % (dwNumberOfBytesRead.value, nSize))
-    except:
-        error = str(WinError(GetLastError()))
-        if 'completed successfully' in error:
-            pass
-        else:
-            print(c.RED + error, c.RESET)
+    def get_memory_range(self):
+        si = SYSTEM_INFO()
+        psi = byref(si)
+        windll.kernel32.GetSystemInfo(psi)
+        base_address = si.lpMinimumApplicationAddress
         
-    return lpBuffer.raw
+        #print(f"Min Page Start: {hex(base_address)} Max Page End: {hex(si.lpMaximumApplicationAddress)}")
 
-def get_memory_range():
-    si = SYSTEM_INFO()
-    psi = byref(si)
-    windll.kernel32.GetSystemInfo(psi)
-    base_address = si.lpMinimumApplicationAddress
-    
-    print(f"Min Page Start: {hex(base_address)} Max Page End: {hex(si.lpMaximumApplicationAddress)}")
+        return si.lpMaximumApplicationAddress
 
-    return si.lpMaximumApplicationAddress
+    def get_imagefile(self, hProcess):
+        """
+        Convert PID to ImageFile
+        """
+        image_name = ctypes.create_string_buffer(512)
+        image_len = 0
 
-def verify_image(file_name):
-    pass
+        image_len = GetProcessImageFileNameA(hProcess, image_name, sizeof(image_name))
 
-def is_sus_page(pageInfo: MEMORY_BASIC_INFORMATION, hProc: HANDLE):
-
-    if pageInfo.ProtectBits == PAGE_EXECUTE_READWRITE:
-        return True
-    
-    elif pageInfo.ProtectBits == PAGE_EXECUTE_READ and pageInfo.Type != 'MEM_IMAGE':
-        return True
-    
-    elif pageInfo.Type == 'MEM_IMAGE':
-        file_name = GetMappedFileNameA(hProc, pageInfo.BaseAddress)
-        pe = pefile.PE(file_name, fast_load=True)
-        good_header = pe.sections[0].get_data()[:0x8]
-        mem_mapped = read_buffer(hProc, pageInfo.BaseAddress, 0x8)
-        image = get_imagefile(hProc)
-        # We may have multiple sections per module; Only show RX region of .text section
-        if image != None and image == file_name and pageInfo.ProtectBits >= 0x20:
-            print(c.BLUE + f'\nImageFile: {image}\n\tSection: {hex(pageInfo.BaseAddress)}\n\tSize: {hex(pageInfo.RegionSize)}\n\tProtect: {hex(pageInfo.ProtectBits)}', c.RESET)
-
-    
-    return False
-
-def read_page(hProc, lpAddress):
-    pageInfo = VirtualQueryEx(hProc, lpAddress, False)
-    base_address = pageInfo.BaseAddress
-    region_size = pageInfo.RegionSize
-    next_page = base_address + region_size
-    
-    if is_sus_page(pageInfo, hProc):
-        print(c.RED + f'[!] Suspicious Page Info:\n\tBaseAddress: {hex(pageInfo.BaseAddress)}\n\tRegion Size: {hex(pageInfo.RegionSize)}\n\tPermissions: {pageInfo.Protect}\n\tType: {pageInfo.Type}', c.RESET)
-        if pageInfo.Type == 'MEM_IMAGE':
-            image_file = GetMappedFileNameA(hProc, pageInfo.BaseAddress)
-            print(c.GREEN + f'\tImage mapped to -> {image_file}')
-            print('ProtectBits: ', pageInfo.ProtectBits)
+        if image_len > 0:
+            image = image_name[:image_len].decode()
+            index = image.find("HarddiskVolume") + len("HarddiskVolumne") + 1
+            return "c:\\" + image[index:]
         
-    if pageInfo.ProtectBits == 0x20 and pageInfo.Type == 'MEM_IMAGE':
-        file_name = GetMappedFileNameA(hProc, pageInfo.BaseAddress)
-        #print(c.BLUE + f"[+] RX memory in .text!\n\tBaseAddr: {hex(pageInfo.BaseAddress)}\n\tImage: {file_name}", c.RESET)
-    
-    # print(c.BLUE + "[+] Next page at: ", hex(next_page))
+        return None
+
+    def get_process_handle(self, dwProcessId, dwDesiredAccess, bInheritHandle=False):
+        handle = OpenProcess(dwDesiredAccess, bInheritHandle, dwProcessId)
+        if handle is None or handle == 0:
+            raise Exception(c.RED + f"Error: {GetLastError()}" + c.RESET)
         
-    return next_page
+        return handle
 
-def scan_memory(pid, lpAddress):
+    def read_page(self, hProc, lpAddress):
+        pageInfo = VirtualQueryEx(hProc, lpAddress, False)
+        base_address = pageInfo.BaseAddress
+        region_size = pageInfo.RegionSize
+        next_page = base_address + region_size
+        
+        # Confirm we are only extracting our image
+        if self.verify_image(hProc, pageInfo):
+            # Save extracted image 
+            self.extract_image(hProc, pageInfo)
+        
+        # print(c.BLUE + "[+] Next page at: ", hex(next_page))
+        return next_page
+    
+    def scan_memory(self, pid):
+        lpAddress = 0xFFFFFFFF  # If x64 -> self.get_memory_range()
+        print(c.GREEN + f"[+] Scanning memory for PID: {pid}", c.RESET)
+        hProc = self.get_process_handle(pid, PROCESS_ALL_ACCESS)
+        address = 0x0
+        while address < lpAddress:
+            next_page = self.read_page(hProc, address)
+            address = next_page
+    
+    def read_buffer(self, hProcess, lpBaseAddress, nSize):
+        dwNumberOfBytesRead = ReadProcessMemory.argtypes[-1]()
+        lpBuffer = ctypes.create_string_buffer(nSize)
+        try:
+            result = ReadProcessMemory(hProcess, LPVOID(lpBaseAddress), lpBuffer, nSize, ctypes.addressof(dwNumberOfBytesRead))
+            if result is None or result == 0:
+                raise Exception('Error: %s' % GetLastError())
 
-    print(c.GREEN + f"[+] Scanning memory for PID: {pid}", c.RESET)
-    hProc = get_process_handle(pid, PROCESS_ALL_ACCESS)
-    address = 0x0
-    while address < lpAddress:
-        next_page = read_page(hProc, address)
-        address = next_page
+            if dwNumberOfBytesRead.value != nSize:
+                raise Exception('Read %s bytes when %s bytes should have been read' % (dwNumberOfBytesRead.value, nSize))
+        except:
+            error = str(WinError(GetLastError()))
+            if 'completed successfully' in error:
+                pass
+            else:
+                print(c.RED + error, c.RESET)
+            
+        return lpBuffer.raw
+    
+    def verify_image(self, hProc: HANDLE, pageInfo: MEMORY_BASIC_INFORMATION):
+        our_image = self.get_imagefile(hProc)
+        image_file = GetMappedFileNameA(hProc, pageInfo.BaseAddress)
+        if our_image == image_file:
+            print(c.BLUE + f'[+] Found memory related to our base image!\n\t Image: {our_image}\n\t BaseAddress: {hex(pageInfo.BaseAddress)}\n\t RegionSize: {pageInfo.RegionSize}', c.RESET)
+            return True
+        
+        return False
 
+    def extract_image(self, hProc: HANDLE, pageInfo: MEMORY_BASIC_INFORMATION):
+        """
+        Use ReadProcessMemory to get our buffer
+        """
+        
+        # Get size of page to extract
+        mem_mapped = self.read_buffer(hProc, pageInfo.BaseAddress, pageInfo.RegionSize)
 
+        self.extracted_image += mem_mapped
+
+    
 if __name__ == "__main__":
-    get_memory_range()
+    m = MemoryMap(4660)
 
-    scan_memory(28292, get_memory_range())
+    m.scan_memory(4660)
+
+    hexdump(m.extracted_image[:100])
+    print(len(m.extracted_image))
+
+    with open('extracted_test.bin', 'wb') as f:
+        f.write(m.extracted_image)
+
