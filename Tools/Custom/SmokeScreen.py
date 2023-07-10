@@ -1,10 +1,12 @@
 """
 """
 
+from hexdump import hexdump
 from colorama import Fore as c
+from mem_scrubber import MemoryScrubber
 from dbg_help import inject_hook, get_pid
 from analyze_pe import Rizin
-from win32mem import scan_memory, get_memory_range
+from win32mem import MemoryMap
 import pyfiglet
 import cmd
 banner = c.GREEN + pyfiglet.figlet_format("Smoke", font='thick')
@@ -25,20 +27,46 @@ class SmokePrompt(cmd.Cmd):
             print(c.RED + "[-] Must supply valid process name (get_pid stage1.exe)", c.RESET)
         else:
             print(c.GREEN + 'PID: ', get_pid(args[0]))
-    
+    """
+    TO DO:
+        - Update the sus_page function
     def do_show_memory(self, arg):
         "Display pages of interest in Remote Process"
 
         args = arg.split()
         try:
             pid = int(args[0])
-            scan_memory(pid, get_memory_range())
+            #scan_memory(pid, get_memory_range())
         except ValueError:
             print(c.RED + "[-] Bad PID given.. Expected: (show_memory <pid>)")
             return
-                 
-    def do_dump_memory(self, arg):
-        pass
+    """          
+    def do_scan_memory(self, arg):
+        args = arg.split()
+        try:
+            pid = int(args[0])
+            # Init manager
+            m = MemoryMap(pid)
+            # Identify payload
+            m.scan_memory(pid)
+            
+            # Extract payload
+            if len(m.extracted_image) > 1:
+                print(c.GREEN, f'[+] Extracted image {len(m.extracted_image)} bytes in size!')
+                hexdump(m.extracted_image[:50])
+                print(c.RESET)
+                # Clean Payload
+                with open('mem_stage2.bin', 'wb') as f:
+                    f.write(m.extracted_image)
+                
+                scrub = MemoryScrubber('mem_stage2.bin')
+                scrub.deflate()
+
+
+        except ValueError:
+            print(c.RED + "[-] Bad PID given.. Expected: (dump_memory <pid>)")
+            return
+
 
     def do_inject_hook(self, arg):
         args = arg.split()
@@ -47,6 +75,14 @@ class SmokePrompt(cmd.Cmd):
         else:
             inject_hook(args[0])
 
+    def do_rizin(self, arg):
+        args = arg.split()
+        try:
+            rz = Rizin(args[0])
+            rz.prompt()
+        except:
+            print(c.RED, "[-] Bad input given... Expected (rizin <file_name>)")
+        
     def do_defobufscate(self, arg):
         pass
     
