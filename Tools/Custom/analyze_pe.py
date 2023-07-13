@@ -1,10 +1,13 @@
+import os
 import rzpipe
+import sys
 import json
+import pefile
+import logging
 from colorama import Fore as c
 from argparse import ArgumentParser
 from pprint import pprint
 from binascii import unhexlify, hexlify
-import pefile
 
 class Rizin:
     def __init__(self, file_name) -> None:
@@ -20,6 +23,11 @@ class Rizin:
         self.rz_conn.cmd('aaa')
         self.rz_conn.cmd("e scr.color=1")
         self.rz_conn.cmd("eco onedark")
+        try:
+            # Fix rz_yara dl_open issue; we don't need this plugin so we can remove it
+            os.rename("C:\\ProgramData\\chocolatey\\lib\\cutter\\tools\\Cutter-v2.2.1-Windows-x86_64\\lib\\plugins\\rz_yara.dll", "C:\\ProgramData\\chocolatey\\lib\\cutter\\tools\\Cutter-v2.2.1-Windows-x86_64\\lib\\plugins\\rz_yara.dll.bck")
+        except FileNotFoundError:
+            pass
     
     def generate_xrefs(self, entry):
         """
@@ -49,7 +57,6 @@ class Rizin:
             entry_data['name'] = entry['name']
             entry_data['offset'] = entry['offset']
             entry_data['size'] = entry['size']
-            # print(f"Function: {entry['name']}\n  Offset: {hex(entry['offset'])} ")
             xrefs = self.generate_xrefs(entry)
             entry_data['xrefs'] = xrefs
             self.json_data[entry['offset']] = entry_data
@@ -57,11 +64,11 @@ class Rizin:
     def display(self):
         for start_addr, func_info in self.json_data.items():
             print(hex(start_addr), func_info)
-        
-        #a = [print(hex(f)) for f in self.json_data.keys()]
 
         offset = self.json_data[0x40324c]['offset']
         size = self.json_data[0x40324c]['size']
+        print(self.pe.DOS_HEADER)
+        print("Using offset: and size: ", offset, size)
         d = self.pe.get_data(offset, size)
         print(d)
     
@@ -79,6 +86,21 @@ class Rizin:
             except KeyboardInterrupt:
                 print("Closing session")
                 break
+    
+    def disasm(self, file_offset, chunk_size=2):
+        """
+        Disassmble chunk
+        """
+        # Change to non-VA mode
+        self.rz_conn.cmd('e io.va=0')
+        
+        # Seek to file offset
+        self.rz_conn.cmd(f's {file_offset}')
+        
+        # Disassembly bytes
+        disasm_bytes = self.rz_conn.cmd(f'pd {chunk_size}')
+        print(disasm_bytes)
+
 
 if __name__ == "__main__":
     """
