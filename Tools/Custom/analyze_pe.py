@@ -19,15 +19,15 @@ class Rizin:
         self.init_function_data()
 
     def init_rz(self):
-        self.rz_conn = rzpipe.open(self.file_name)
-        self.rz_conn.cmd('aaa')
-        self.rz_conn.cmd("e scr.color=1")
-        self.rz_conn.cmd("eco onedark")
         try:
             # Fix rz_yara dl_open issue; we don't need this plugin so we can remove it
             os.rename("C:\\ProgramData\\chocolatey\\lib\\cutter\\tools\\Cutter-v2.2.1-Windows-x86_64\\lib\\plugins\\rz_yara.dll", "C:\\ProgramData\\chocolatey\\lib\\cutter\\tools\\Cutter-v2.2.1-Windows-x86_64\\lib\\plugins\\rz_yara.dll.bck")
         except FileNotFoundError:
             pass
+        self.rz_conn = rzpipe.open(self.file_name)
+        self.rz_conn.cmd('aaa')
+        self.rz_conn.cmd("e scr.color=1")
+        self.rz_conn.cmd("eco onedark")
     
     def generate_xrefs(self, entry):
         """
