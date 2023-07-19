@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 from pprint import pprint
 from binascii import unhexlify, hexlify
 
+
 class Rizin:
     def __init__(self, file_name) -> None:
         self.file_name = file_name
@@ -17,6 +18,7 @@ class Rizin:
         self.json_data = {}
         self.init_rz()
         self.init_function_data()
+
 
     def init_rz(self):
         try:
@@ -87,12 +89,13 @@ class Rizin:
                 print("Closing session")
                 break
     
-    def disasm(self, file_offset, chunk_size=2):
+    def disasm(self, file_offset, chunk_size=2, rva=False):
         """
         Disassmble chunk
         """
-        # Change to non-VA mode
-        self.rz_conn.cmd('e io.va=0')
+        if not rva:
+            # Change to non-VA mode
+            self.rz_conn.cmd('e io.va=0')
         
         # Seek to file offset
         self.rz_conn.cmd(f's {file_offset}')
@@ -100,6 +103,12 @@ class Rizin:
         # Disassembly bytes
         disasm_bytes = self.rz_conn.cmd(f'pd {chunk_size}')
         print(disasm_bytes)
+
+    def close(self):
+        """
+        Close all files
+        """
+        self.rz_conn.cmd('o--')
 
 
 if __name__ == "__main__":
