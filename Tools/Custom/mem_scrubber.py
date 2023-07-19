@@ -118,6 +118,8 @@ class MemoryScrubber:
             assert new_entry == b'\xE8\x00\x00\x00'
         except AssertionError:
             print(c.RED + '[-] Failed to clean memory dumped module!', c.RESET)
+            # Close file first, avoids permission error
+            rz.close()
             if os.path.exists('deflated.bin'):
                 os.remove('deflated.bin')
 
