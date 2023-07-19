@@ -96,6 +96,7 @@ class MemoryScrubber:
         print(c.YELLOW + '[!] Current EntryPoint: ')
         ep = active_dump.get_chunk(0x40324c, 0x4)
         hexdump(ep)
+        active_dump.disasm(0x40324c, chunk_size=0x2, rva=True)
 
         start_index = data.find(first_byte)
         end_index = data.find(last_byte) + 4
@@ -123,5 +124,6 @@ class MemoryScrubber:
         print(c.GREEN + f'[+] Successfully cleaned module "{self.file}" as : "deflated.bin"', c.RESET)
         print(c.GREEN + '[+] New EntryPoint: ')
         hexdump(new_entry)
+        rz.disasm(0x40324c, chunk_size=0x2, rva=True)
         print(c.RESET)
     

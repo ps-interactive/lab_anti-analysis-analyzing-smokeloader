@@ -1,9 +1,17 @@
 import re
+import platform
 from sys import argv
 from hexdump import hexdump
 from colorama import Fore as c
 from argparse import ArgumentParser
 from analyze_pe import Rizin
+
+
+# Windows logging console
+if platform.system() == 'Windows':
+    from colorama import just_fix_windows_console
+    just_fix_windows_console()
+
 
 def find_opaque_predicates(data):
     """
