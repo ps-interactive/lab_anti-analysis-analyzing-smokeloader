@@ -10,8 +10,8 @@ entry_point = b'\xE8\x00\x00\x00'
 
 import os
 import pefile
-from hexdump import hexdump
-from analyze_pe import Rizin
+from modules.hexdump import hexdump
+from modules.analyze_pe import Rizin
 from binascii import unhexlify, hexlify
 from colorama import Fore as c
 
@@ -66,9 +66,12 @@ class MemoryScrubber:
         end = data.find(last_byte) + 4
         pe_footer = data[end:]
         
+        # Payload start
+        start_of_payload = payload.find(first_byte)
+        end_of_payload = payload.find(last_byte) + 4
         # New Payload
         inflated_payload = pe_header
-        inflated_payload += payload
+        inflated_payload += payload[start_of_payload:end_of_payload]
         inflated_payload += pe_footer
 
         with open('ReadyToPatch.bin', 'wb') as f:
@@ -81,7 +84,6 @@ class MemoryScrubber:
 
         print(c.GREEN + '[+] Successfully inflated payload! Ready to inject back into process!\n -> ReadyToPatch.bin', c.RESET)
     
-
     def deflate(self):
         """
         Our EntryPoint(0x40324C) should point to (E8 00 00 00 00)
