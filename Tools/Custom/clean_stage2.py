@@ -1,12 +1,13 @@
+import os
 import re
 import struct
 import platform
 from sys import argv
 from hexdump import hexdump
 from colorama import Fore as c
+from itertools import cycle
 from argparse import ArgumentParser, BooleanOptionalAction
 from analyze_pe import Rizin
-
 
 # Windows logging console
 if platform.system() == 'Windows':
@@ -21,18 +22,18 @@ def find_opaque_predicates(data):
     """
     je_jne_opcodes = re.compile(b'\x74.\x75.')
     jne_je_opcodes = re.compile(b'\x75.\x74')
+    predicates = [je_jne_opcodes, jne_je_opcodes]
     # Store matches for comparison and patching later
     found = []
 
     # Find matches in binary
-    for sig in (je_jne_opcodes, jne_je_opcodes):
+    for sig in predicates:
         matches = sig.finditer(data)
         for match in matches:
             found.append(match)
     return found
 
-
-def patch_opaques(file_name, output=""):
+def patch_opaques(file_name, output="", in_memory=False):
     """
     Use offsets to patch in-memory copy and write new file
     """
@@ -57,9 +58,11 @@ def patch_opaques(file_name, output=""):
     
     validate_opaque_patch(file_name, patched_file, matches)
 
+    if in_memory:
+        return data
+
     return patched_file
     
-
 def validate_opaque_patch(original, patched, mods):
     """
     Display to user what bytes were patched, confirming our new file contains different instructions
@@ -89,38 +92,76 @@ def validate_opaque_patch(original, patched, mods):
     if success == total_patches:
         print(c.GREEN + f'[+] Successfully patched ({success}/{total_patches}) opaque predicates\n\n\tPatched file: "{patched}"\n', c.RESET)
 
-def patch_xor_calls(rz: Rizin):
+def patch_problem_funcs(rz: Rizin, blob):
     """
-    Remove all calls to XOR function
-     - when debugging these will re-encrypt our hard work!
-     - these additional sections where found after decrypting the new
-       function bodies and starting debugging
+    004014E7:   call [ebx+0x7c]        (90 90 90 90 90)
+    00402022:   start of new function  (patch with retn -> C3 90 90 90)
     """
-    with open(rz.file_name, 'rb') as f:
-        payload = f.read()
-
-    clean_payload = b''
-
-    additional_sections_to_nop = [
-        0x00401316,
-        0x00401549,
-
-    ]
-
-    for section in sections_to_nop.values():
-        if payload.find(section):
-            print('Find encrypted call! Replacing with NOPs..')
-            payload = payload.replace(section, b'\x90\x90\x90\x90\x90')
+    # Patch : 0x004014E7
+    bad_call = rz.get_chunk(0x004014E7, 0x8)
+    bad_call_patch = b'\x90' * 5 + bad_call[5:]
+    blob = blob.replace(bad_call, bad_call_patch)
     
-    for section in sections_to_nop.values():
-        if payload.find(section) > 1:
-            still_there = payload.find(section)
-            hexdump(payload[still_there:still_there+10])
-            print('Patch didnt work! ', payload.find(section))
+    # Patch : 0x00402022
+    simple_ret = rz.get_chunk(0x00402ED2, 0x8)
+    simple_patch = b'\x40' + b'\x90' * 4 + simple_ret[5:]   # inc eax; NOPs
+    blob = blob.replace(simple_ret, simple_patch)
 
-    with open('deflated_no_encrypt.bin', 'wb') as f:
-        f.write(payload)
+    # Patch: 0x004014F2
+    bad_call = rz.get_chunk(0x004014F2, 0x8)
+    bad_call_patch = b'\x90' * 5 + bad_call[5:]
+    blob = blob.replace(bad_call, bad_call_patch)
+    
+
+    return blob
+
+def patch_xor_calls(blob):
+    """
+    Remove calls to XOR function that result in re-encryption:
+    - we can leave the decryption calls, since these seem to be fine
+
+    Manual Fix:
+        0x00401316 (this expects these values to be set)
+            EAX = 0x12E3 (when we patch it still equals 12B0)
+            ECX = 0x0
+    90 90 90 90 90
+    sub_402D18      (RealDeal)
+    """
+    # Create temp file
+    tmp_file = 'stage2_tmp'
+    with open(tmp_file, 'wb') as f:
+        f.write(blob)
+
+    rz = Rizin(tmp_file)
+    # Lets patch one-by-one
+    rva_to_patch = [0x004012AB, 0x00401316, 0x00402BFA, 0x00402B58, 0x00402A62, 0x00402B08, 0x00402BB6, 
+                    0x00402C77, 0x00402CC5, 0x004029A7, 0x00402A0B, 0x00402D75, 0x00402DBD, 0x00401F7E, 
+                    0x00402013, 0x00402E6E, 0x00402EAB, 0x00401A41, 0x00401C0F, 0x004027B5, 0x0040213E,
+                    0x004024C4, 0x004023D0, 0x0040246F, 0x00402959, 0x00402064, 0x004014AA, 0x00401981, 
+                    0x00401364, 0x00401458, 0x00401549, 0x0040150E]
+
+    for rva in rva_to_patch:
+        call_xor = rz.get_chunk(rva, 0x8)
         
+        # Patch return args expected for XOR call
+        if rva == 0x00401316:
+            # patch [push 12B0]     -> push 0x12E3
+            push_12B0 = rz.get_chunk(0x004012DA, 0x8)
+            blob = blob.replace(push_12B0, b'\x68\xE3\x12\x00\x00' + push_12B0[5:])
+            # patch [mov ecx, 0x6b] -> mov ecx, 0x0
+            mov_0x6b = rz.get_chunk(0x004012F4, 0x8)
+            blob = blob.replace(mov_0x6b, b'\xB9\x00\x00\x00\x00' + mov_0x6b[5:])
+        
+        # Patch XOR call
+        patched = b'\x90' * 5 + call_xor[5:]
+        blob = blob.replace(call_xor, patched)
+    
+    # Patch any remaining problem functions (not XOR related)
+    #blob = patch_problem_funcs(rz, blob)
+    # Close handles
+    rz.close()
+    return blob
+
 def decrypt_body(chunk, key):
     
     decrypted_func = b''
@@ -144,9 +185,9 @@ def decrypt_sections(rz: Rizin, encryped_functions: dict, blob):
 def decrypt_functions(file_name):
     """
     The majority of the functions for Stage2 are encrypted and we must decrypt, before continuing
-    - The offset to calculate the RVA is store in EAX
+    - The offset to calculate the RVA is stored in EAX
     - The size of the function to decrypt is stored in ECX
-    - The xor_key to decrypt the functio is stored in EDX
+    - The xor_key to decrypt the function is stored in EDX
     """
     rz = Rizin(file_name)
     with open(file_name, 'rb') as f:
@@ -211,13 +252,13 @@ def decrypt_functions(file_name):
     }
 
     # These were identified after initial decryption (first round)
-    new_decrypt_function = {
+    second_round_functions = {
         0x00402CC5: {'rva': base_address + 0x2CCA,
                      'size': 0x0B0,
                      'key': 0x89},
         0x00401364: {'rva': base_address + 0x1369,
                      'size': 0x0F4,
-                     'key': 0x21}   # Might be wrong
+                     'key': 0x21}
     }
 
     third_round_functions = {
@@ -231,52 +272,92 @@ def decrypt_functions(file_name):
                      'size': 0x0CB,
                      'key': 0x0C}
     }
-    """
-    # Decrypt all functions (first round)
-    for offset, func in encryped_functions.items():
-        
-        # Get call to xor_function
-        # Validate we are getting call inst
-        #rz.disasm(func['rva'] - 0x5, 0x1, rva=True)
-        call_xor = rz.get_chunk(func['rva'] - 0x5, 0x5)
-        print(c.GREEN + f"[+] Decrypting function at : [{hex(func['rva'])}]", c.RESET)
-        
-        # Get encrypted function body and decrypt with key
-        encrypted = rz.get_chunk(func['rva'], func['size'])
-        decrypted = decrypt_body(encrypted, func['key'])
-        
-        # Remove call to xor_function so we don't re-encrypt while debugging
-        if call_xor:
-            print(c.GREEN + '\t - patching call to xor_function with NOPs', c.RESET)
-            raw_bin = raw_bin.replace(call_xor, b'\x90\x90\x90\x90\x90')
-        
-        # Patch encrypted function
-        raw_bin = raw_bin.replace(encrypted, decrypted)
-    """
+    
     # Decrypt all functions (first round)
     raw_bin = decrypt_sections(rz, encryped_functions, raw_bin)
     
     # Second round
-    raw_bin = decrypt_sections(rz, new_decrypt_function, raw_bin)
+    raw_bin = decrypt_sections(rz, second_round_functions, raw_bin)
     
     # Third round
     raw_bin = decrypt_sections(rz, third_round_functions, raw_bin)
 
     # Fourth round
     raw_bin = decrypt_sections(rz, fourth_round_functions, raw_bin)
+
+    # Patch XOR
+    raw_bin = patch_xor_calls(raw_bin)
     
     # Total functions patched
-    total = len(encryped_functions.keys()) + len(new_decrypt_function.keys()) + len(third_round_functions.keys()) + len(fourth_round_functions.keys())
+    total = len(encryped_functions.keys()) + len(second_round_functions.keys()) + len(third_round_functions.keys()) + len(fourth_round_functions.keys())
     print(c.GREEN + f'[+] Successfully decrypted ({total}) functions! ', c.RESET)
     with open('decrypted_stage2.bin', 'wb') as f:
         f.write(raw_bin)
+
+def extract_final_stage(file_name, BITS='x86'):
+    """
+    Encrypted/Compressed Stage3 shellcode
     
+    gs == 0x2B
+    test ax , ax (0x2B)     ; Since we are on a x64 machine, we get the value for the 64bit shellcode
+
+    Shellcode offsets:
+    00402F07:   mov     ax, gs              ; Determine whether to use 32bit or 64bit shellcode for stage3
+    00402F0A:   test    ax, ax
+    00402F0F:   lea     eax, [ebx+33D7h]    ; EBX is our ImageBase (0x400000)
+    00402F15:   mov     ecx, 245Ch          ; Size of shellcode to extract
+
+    Decryption key:
+    004012B0:   mov     edx, 74F56265h      ; XOR_KEY
+    ....
+    004012C2:   xor     eax, edx
+    """
+
+    rz = Rizin(file_name)
+    base_address = 0x00400000
+    # 32bit shellcode
+    x86_shellcode_offset = base_address + 0x33D7
+    x86_shellcode_size = 0x245C
+    # 64bit shellcode
+    x64_shellcode_offset = base_address + 0x5833
+    x64_shellcode_size = 0x2F8E
+
+    # Determine which ARCH to extract (default is x86)
+    if BITS != 'x86':
+        start = x64_shellcode_offset
+        end = start + x64_shellcode_size
+        total_size = end - start
+    else:
+        BITS = 'x86'
+        start = 0x004033D7
+        end = start + 0x245C
+        total_size = end - start
+    
+    extracted = rz.get_chunk(start, total_size)
+    
+    if extracted:
+        stage_3_name = 'stage3_encrypted_compressed_' + BITS + '.bin'
+        print(c.GREEN + f'[+] Extracted stage3 payload successfully! Writing to: "{stage_3_name}"', c.RESET)
+        with open(stage_3_name, 'wb') as f:
+            f.write(extracted)
+
+def xor(data, dw_key):
+    """
+    This function is decrypted after our first XOR_CHUNK
+    It starts the decryption of a large buffer at the end of the payload
+    Credit: OALabs
+    """
+    if isinstance(dw_key, int):
+        key = bytes([dw_key])
+    return bytes([a ^ b for a, b in zip(data, cycle(dw_key))])
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("-f", "--file", help="Malware to analyze", metavar='', required=False)
     parser.add_argument('-op', "--opaques", action='store_true', help="Patch opaque predicates")
     parser.add_argument('-enc', '--encrypted', action='store_true', help='Patch encrypted functions')
+    parser.add_argument('-ext', '--extract', action='store_true')
 
     args = parser.parse_args()
 
@@ -287,7 +368,13 @@ if __name__ == "__main__":
     if args.opaques:    
         patch_opaques(args.file)
     elif args.encrypted:
+        # Handle XOR decryption
         decrypt_functions(args.file)
+        # Handle new predicates after decryption
         patch_opaques('decrypted_stage2.bin', output='decrypted_stage2_no_opaques.bin')
+
+    elif args.extract:
+        # Stage3
+        extract_final_stage(args.file)
     else:
         print(args.file, args.encrypted)
