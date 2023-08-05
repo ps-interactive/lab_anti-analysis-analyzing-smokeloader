@@ -5,6 +5,7 @@ import structlog
 from contextlib import suppress
 from colorama import Fore as c
 from pprint import pprint
+from argparse import ArgumentParser
 
 """
 Credit: https://github.com/myrtus0x0/smoke_conf_extract/blob/main/conf_extract.py
@@ -208,10 +209,10 @@ def extract_version(sample_data:bytearray):
     return version_year
 
 
-def main():
-    with open(sys.argv[1], "rb") as f:
+def analyze_stage3(payload):
+    with open(payload, "rb") as f:
         smoke_stage_3 = f.read()
-
+    
     # C2 addrs
     c2s = extract_c2_buffers(smoke_stage_3)
 
@@ -236,4 +237,12 @@ def main():
         print("Failed to read config!")
         
 if __name__ == "__main__":
-    main()
+    parser = ArgumentParser()
+    parser.add_argument('-f', '--file', metavar='', help="Stage3 payload to Extract configuration")
+    args = parser.parse_args()
+
+    if args.file == None:
+        parser.print_help()
+
+    else:
+        analyze_stage3(args.file)
