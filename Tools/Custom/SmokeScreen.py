@@ -3,10 +3,10 @@
 
 from hexdump import hexdump
 from colorama import Fore as c
-from mem_scrubber import MemoryScrubber
-from dbg_help import inject_hook, get_pid
-from analyze_pe import Rizin
-from win32mem import MemoryMap
+from modules.mem_scrubber import MemoryScrubber
+from modules.dbg_help import inject_hook, get_pid
+from modules.analyze_pe import Rizin
+from modules.win32mem import MemoryMap
 import pyfiglet
 import cmd
 banner = c.GREEN + pyfiglet.figlet_format("Smoke", font='thick')
@@ -27,20 +27,7 @@ class SmokePrompt(cmd.Cmd):
             print(c.RED + "[-] Must supply valid process name (get_pid stage1.exe)", c.RESET)
         else:
             print(c.GREEN + 'PID: ', get_pid(args[0]))
-    """
-    TO DO:
-        - Update the sus_page function
-    def do_show_memory(self, arg):
-        "Display pages of interest in Remote Process"
 
-        args = arg.split()
-        try:
-            pid = int(args[0])
-            #scan_memory(pid, get_memory_range())
-        except ValueError:
-            print(c.RED + "[-] Bad PID given.. Expected: (show_memory <pid>)")
-            return
-    """          
     def do_scan_memory(self, arg):
         args = arg.split()
         try:
