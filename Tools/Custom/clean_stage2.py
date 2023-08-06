@@ -357,7 +357,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--file", help="Malware to analyze", metavar='', required=False)
     parser.add_argument('-op', "--opaques", action='store_true', help="Patch opaque predicates")
     parser.add_argument('-enc', '--encrypted', action='store_true', help='Patch encrypted functions')
-    parser.add_argument('-ext', '--extract', action='store_true')
+    parser.add_argument('-ext', '--extract', action='store_true', help='Extract encrypted/compressed stage3 payload')
 
     args = parser.parse_args()
 
