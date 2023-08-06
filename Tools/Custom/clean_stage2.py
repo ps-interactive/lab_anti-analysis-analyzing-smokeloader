@@ -3,11 +3,11 @@ import re
 import struct
 import platform
 from sys import argv
-from hexdump import hexdump
 from colorama import Fore as c
 from itertools import cycle
 from argparse import ArgumentParser, BooleanOptionalAction
-from analyze_pe import Rizin
+from modules.analyze_pe import Rizin
+from modules.hexdump import hexdump
 
 # Windows logging console
 if platform.system() == 'Windows':

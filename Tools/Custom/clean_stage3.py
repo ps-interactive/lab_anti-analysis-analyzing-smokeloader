@@ -3,8 +3,8 @@ import struct
 import sys
 import structlog
 import unicorn
-import unicorn_pe_loader
 import platform
+from modules.unicorn_pe_loader import unicorn_pe_loader
 from argparse import ArgumentParser
 from binascii import unhexlify
 from itertools import cycle

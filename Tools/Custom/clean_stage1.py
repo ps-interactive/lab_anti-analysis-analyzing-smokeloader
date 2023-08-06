@@ -1,7 +1,3 @@
-from argparse import ArgumentParser
-
-#!/usr/bin/env python3
-
 """
 This tool was developed to clean Stage1 for sample:
     - SmokeLoader: a88d2d74d7359c8b74e1f85fa6fd4fbb 
