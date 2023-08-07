@@ -1,14 +1,14 @@
 """
 """
-
-from hexdump import hexdump
+import pyfiglet
+import cmd
 from colorama import Fore as c
+from modules.hexdump import hexdump
 from modules.mem_scrubber import MemoryScrubber
 from modules.dbg_help import inject_hook, get_pid
 from modules.analyze_pe import Rizin
 from modules.win32mem import MemoryMap
-import pyfiglet
-import cmd
+
 banner = c.GREEN + pyfiglet.figlet_format("Smoke", font='thick')
 
 

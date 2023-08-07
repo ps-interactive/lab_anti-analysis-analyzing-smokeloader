@@ -7,7 +7,7 @@ from ctypes import Structure, byref, sizeof, WinError
 from colorama import Fore as c
 from colorama import just_fix_windows_console
 from platform import system
-from hexdump import hexdump
+from modules.hexdump import hexdump
 
 if system() == 'Windows':
     just_fix_windows_console()
