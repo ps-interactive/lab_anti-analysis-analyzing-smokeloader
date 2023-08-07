@@ -286,7 +286,7 @@ def decrypt_functions(file_name):
     raw_bin = decrypt_sections(rz, fourth_round_functions, raw_bin)
 
     # Patch XOR
-    raw_bin = patch_xor_calls(raw_bin)
+    # raw_bin = patch_xor_calls(raw_bin)
     
     # Total functions patched
     total = len(encryped_functions.keys()) + len(second_round_functions.keys()) + len(third_round_functions.keys()) + len(fourth_round_functions.keys())
@@ -355,8 +355,8 @@ def xor(data, dw_key):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("-f", "--file", help="Malware to analyze", metavar='', required=False)
-    parser.add_argument('-op', "--opaques", action='store_true', help="Patch opaque predicates")
-    parser.add_argument('-enc', '--encrypted', action='store_true', help='Patch encrypted functions')
+    parser.add_argument('-op', "--opaques", action='store_true', help='Patch opaque predicates')
+    parser.add_argument('-df', '--decryptfuncs', action='store_true', help='Decrypt encrypted functions')
     parser.add_argument('-ext', '--extract', action='store_true', help='Extract encrypted/compressed stage3 payload')
 
     args = parser.parse_args()
@@ -367,7 +367,7 @@ if __name__ == "__main__":
     print(c.YELLOW + "[!] Starting analysis on : ", args.file, c.RESET)
     if args.opaques:    
         patch_opaques(args.file)
-    elif args.encrypted:
+    elif args.decryptfuncs:
         # Handle XOR decryption
         decrypt_functions(args.file)
         # Handle new predicates after decryption
@@ -377,4 +377,4 @@ if __name__ == "__main__":
         # Stage3
         extract_final_stage(args.file)
     else:
-        print(args.file, args.encrypted)
+        print(args.file, args.decryptfuncs)
