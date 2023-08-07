@@ -4,13 +4,13 @@ import sys
 import structlog
 import unicorn
 import platform
-from modules.unicorn_pe_loader import unicorn_pe_loader
 from argparse import ArgumentParser
 from binascii import unhexlify
 from itertools import cycle
 from contextlib import suppress
 from colorama import Fore as c
-
+from modules.unicorn_pe_loader import InitUnicorn
+from conf_extract import analyze_stage3
 # Windows logging console
 if platform.system() == 'Windows':
     from colorama import just_fix_windows_console
@@ -57,7 +57,7 @@ def init_logger():
     return
 
 
-def emulate_decompress_call(emulator:unicorn_pe_loader.InitUnicorn, start_func, end_func, compressed_data, decompressed_size):
+def emulate_decompress_call(emulator:InitUnicorn, start_func, end_func, compressed_data, decompressed_size):
     logger = structlog.get_logger(__name__)
 
     logger.info("starting emulation", start_addr="0x%x" % start_func, end_func="0x%x" % end_func)
@@ -99,7 +99,7 @@ def emulate_decompress_call(emulator:unicorn_pe_loader.InitUnicorn, start_func, 
     return decompressed_data
 
 
-def decompress_buffer(emulator:unicorn_pe_loader.InitUnicorn, decrypted_stage_3):
+def decompress_buffer(emulator:InitUnicorn, decrypted_stage_3):
     logger = structlog.get_logger(__name__)
     decompressed_size = struct.unpack("I", decrypted_stage_3[:4])[0]
     logger.info("decompressed info", decompressed_size="0x%x" % decompressed_size)
@@ -145,7 +145,7 @@ def decompress_stage3(decrypted_stage_3, output_file=None):
     """
     logger = structlog.get_logger(__name__)
     
-    decompress_emulator = unicorn_pe_loader.InitUnicorn(unhexlify(decompress_client), logger, type_pe=True, bit=32, debug=False)
+    decompress_emulator = InitUnicorn(unhexlify(decompress_client), logger, type_pe=True, bit=32, debug=False)
 
     decompressed_data = decompress_buffer(decompress_emulator, decrypted_stage_3)
     if decompressed_data is None:
@@ -177,7 +177,7 @@ def patch_stage_3(stage3_file, output_file=None):
     Stages to patch:
     - decrypt
     - decompress
-    - patch missing PE header
+    - patch missing PE header (Not implemented)
 
     Resources:
         DWORD XOR Encryption:   (https://research.openanalysis.net/smoke/smokeloader/loader/config/yara/triage/2022/08/25/smokeloader.html#Extract-Stage-3)
@@ -217,7 +217,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("-f", "--file", help="Malware to analyze", metavar='', required=False)
     parser.add_argument('-d', '--decompress', action='store_true', help='Decompress file with LZSAv2. Make sure payload is already decrypted')
-    parser.add_argument('-a', '--all', action='store_true', help='Do all the tasks to fix payload: (decrypt, decompress, patch PE header)')
+    parser.add_argument('-a', '--all', action='store_true', help='Do all the tasks to fix payload: (decrypt, decompress)')
     parser.add_argument('-conf', '--config', action='store_true', help='Extract the configuration from cleaned Stage3 payload')
 
     args = parser.parse_args()
@@ -233,5 +233,7 @@ if __name__ == "__main__":
     
     elif args.all:
         patch_stage_3(args.file, output_file="Stage3.bin")
+    elif args.config:
+        analyze_stage3(args.file)
     else:
         parser.print_help()

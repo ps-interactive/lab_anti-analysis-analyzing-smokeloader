@@ -91,6 +91,9 @@ def validate_opaque_patch(original, patched, mods):
         
     if success == total_patches:
         print(c.GREEN + f'[+] Successfully patched ({success}/{total_patches}) opaque predicates\n\n\tPatched file: "{patched}"\n', c.RESET)
+        orig_rz.close()
+        patched_rz.close()
+
 
 def patch_problem_funcs(rz: Rizin, blob):
     """

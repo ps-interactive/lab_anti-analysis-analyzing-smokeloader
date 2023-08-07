@@ -108,7 +108,7 @@ class Rizin:
         """
         Close all files
         """
-        self.rz_conn.cmd('o--')
+        self.rz_conn.quit()
 
 
 if __name__ == "__main__":

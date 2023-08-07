@@ -24,6 +24,10 @@ from unicorn import (
 IMAGE_FILE_MACHINE_I386 = 0x014C
 IMAGE_FILE_MACHINE_AMD64 = 0x8664
 
+"""
+Credit: https://github.com/myrtus0x0/smoke_conf_extract/blob/main/unicorn_pe_loader.py
+
+"""
 
 class InitUnicorn(object):
     def __init__(self, data, logger, type_pe=False, bit=32, debug=False, data_addr=0xDEADBEEF00000000):
